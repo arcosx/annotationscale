@@ -43,7 +43,9 @@ func NewAnnotationScaleManager(managerName string, match *metav1.LabelSelector, 
 	}
 
 	if len(labelMap) != 0 {
-		mgr, mgrCreateErr = manager.New(config, manager.Options{NewCache: cache.BuilderWithOptions(cache.Options{
+		mgr, mgrCreateErr = manager.New(config, manager.Options{
+			MetricsBindAddress: "0",
+			NewCache: cache.BuilderWithOptions(cache.Options{
 			SelectorsByObject: cache.SelectorsByObject{
 				&appsv1.Deployment{}: {
 					Label: labels.SelectorFromSet(labelMap),
