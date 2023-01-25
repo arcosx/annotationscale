@@ -1,0 +1,2 @@
+env:
+	minikube start --force
