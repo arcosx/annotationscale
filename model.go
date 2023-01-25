@@ -58,6 +58,9 @@ func SetScaleAnnotation(annotations map[string]string, scaleAnnotation *ScaleAnn
 	if err != nil {
 		return annotations, err
 	}
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 	annotations["steps"] = string(stepsJSONBytes)
 	annotations["current_step_index"] = strconv.Itoa(int(scaleAnnotation.CurrentStepIndex))
 	annotations["current_step_state"] = string(scaleAnnotation.CurrentStepState)

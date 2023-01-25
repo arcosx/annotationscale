@@ -144,6 +144,25 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			return reconcile.Result{}, nil
 		}
 
+		// handle out of index
+		if scaleAnnotation.CurrentStepIndex == len(scaleAnnotation.Steps) {
+			r.log.Info(fmt.Sprintf("deployment %s change step state: %s --> %s when currentStepIndex %d equal len(scaleAnnotation.Steps)", deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted, scaleAnnotation.CurrentStepIndex))
+			scaleAnnotation.CurrentStepState = StepStateCompleted
+
+			err = SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
+			if err != nil {
+				r.log.Error(err, fmt.Sprintf("deployment %s failed set scale annotation", deployment.Name))
+				return reconcile.Result{}, err
+			}
+	
+			err = r.patchDeployment(ctx, deployment)
+			if err != nil {
+				r.log.V(1).Error(err, "patchAnnotations failed")
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{}, nil
+		}
+
 		nextStepIndex := scaleAnnotation.CurrentStepIndex + 1
 		nextStep := scaleAnnotation.Steps[nextStepIndex-1]
 
@@ -176,6 +195,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			r.log.V(1).Error(err, "patchAnnotations failed")
 			return reconcile.Result{}, err
 		}
+		return reconcile.Result{}, nil
 
 	case StepStateCompleted:
 		if *deployment.Spec.Replicas != scaleAnnotation.Steps[scaleAnnotation.CurrentStepIndex-1].Replicas {
