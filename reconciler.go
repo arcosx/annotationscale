@@ -93,7 +93,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			now := time.Now()
 			stepDeadline := scaleAnnotation.StepDeadline()
 			if now.Before(stepDeadline) {
-				r.log.Info(fmt.Sprintf("deployment %s upgrading now....", deployment.Name))
+				r.log.Info(fmt.Sprintf("deployment %s upgrading now....status.Replicas(%d) status.AvailableReplicas(%d) ", deployment.Name, deployment.Status.Replicas, deployment.Status.AvailableReplicas))
 			} else {
 				r.log.Info(fmt.Sprintf("deployment %s deadline", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
 				if deployment.Status.UnavailableReplicas > int32(scaleAnnotation.MaxUnavailableReplicas) {
@@ -124,7 +124,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		if deployment.Status.Replicas == deployment.Status.AvailableReplicas {
 			deployment.Spec.Paused = true
 			scaleAnnotation.LastUpdateTime = time.Now()
-			r.log.Info(fmt.Sprintf("deployment %s is paused set spec.paused true", deployment.Name))
+			r.log.Info(fmt.Sprintf("deployment %s is paused and set spec.paused true", deployment.Name))
 		} else {
 			r.log.Info(fmt.Sprintf("deployment %s upgrading to pause point....", deployment.Name))
 		}
@@ -135,6 +135,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			return reconcile.Result{}, err
 		}
 
+		r.log.V(4).Info(fmt.Sprintf("deployment %s patch deployment", deployment.Name), "deployment", deployment)
 		err = r.patchDeployment(ctx, deployment)
 
 		if err != nil {
