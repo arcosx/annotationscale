@@ -2,6 +2,7 @@ package annotationscale
 
 import (
 	"context"
+	"sync"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -11,22 +12,22 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 type AnnotationScaleManager struct {
-	manager  manager.Manager
-	config   *rest.Config
-	log      logr.Logger
-	stopChan chan bool
-	match    *metav1.LabelSelector
+	log     logr.Logger
+	manager manager.Manager
+	config  *rest.Config
+	match   *metav1.LabelSelector
+
+	stopCh  chan struct{}
+	mutex   sync.Mutex
+	stopped bool
 }
 
-func NewAnnotationScaleManager(managerName string, match *metav1.LabelSelector, config *rest.Config) (*AnnotationScaleManager, error) {
-	logf.SetLogger(zap.New())
-	log := logf.Log.WithName(managerName)
+func NewAnnotationScaleManager(logger logr.Logger, managerName string, match *metav1.LabelSelector, config *rest.Config) (*AnnotationScaleManager, error) {
+	log := logger.WithName(managerName)
 
 	labelMap, err := metav1.LabelSelectorAsMap(match)
 	if err != nil {
@@ -46,20 +47,22 @@ func NewAnnotationScaleManager(managerName string, match *metav1.LabelSelector, 
 		mgr, mgrCreateErr = manager.New(config, manager.Options{
 			MetricsBindAddress: "0",
 			NewCache: cache.BuilderWithOptions(cache.Options{
-			SelectorsByObject: cache.SelectorsByObject{
-				&appsv1.Deployment{}: {
-					Label: labels.SelectorFromSet(labelMap),
+				SelectorsByObject: cache.SelectorsByObject{
+					&appsv1.Deployment{}: {
+						Label: labels.SelectorFromSet(labelMap),
+					},
+					&appsv1.ReplicaSet{}: {
+						Label: labels.SelectorFromSet(labelMap),
+					},
+					&corev1.Pod{}: {
+						Label: labels.SelectorFromSet(labelMap),
+					},
 				},
-				&appsv1.ReplicaSet{}: {
-					Label: labels.SelectorFromSet(labelMap),
-				},
-				&corev1.Pod{}: {
-					Label: labels.SelectorFromSet(labelMap),
-				},
-			},
-		})})
+			})})
 	} else {
-		mgr, mgrCreateErr = manager.New(config, manager.Options{})
+		mgr, mgrCreateErr = manager.New(config, manager.Options{
+			MetricsBindAddress: "0",
+		})
 	}
 
 	if mgrCreateErr != nil {
@@ -68,11 +71,12 @@ func NewAnnotationScaleManager(managerName string, match *metav1.LabelSelector, 
 	}
 
 	return &AnnotationScaleManager{
-		manager:  mgr,
-		config:   config,
-		log:      log,
-		stopChan: make(chan bool),
-		match:    match,
+		manager: mgr,
+		config:  config,
+		log:     log,
+		stopCh:  make(chan struct{}),
+		stopped: false,
+		match:   match,
 	}, nil
 }
 
@@ -82,7 +86,7 @@ func (m *AnnotationScaleManager) Start() error {
 	go func() {
 		select {
 		case <-ctx.Done():
-		case <-m.stopChan:
+		case <-m.stopCh:
 			cancel()
 		}
 	}()
@@ -104,5 +108,16 @@ func (m *AnnotationScaleManager) Start() error {
 }
 
 func (m *AnnotationScaleManager) Stop() {
-	m.stopChan <- true
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if !m.stopped {
+		m.stopped = true
+		close(m.stopCh)
+	}
+}
+
+func (m *AnnotationScaleManager) Stopping() bool {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	return m.stopped
 }

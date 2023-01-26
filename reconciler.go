@@ -24,6 +24,7 @@ type DeploymentReconciler struct {
 // This function will be called when there is a change to a Deployment or a ReplicaSet or a Pod with an OwnerReference
 // to a Deployment.
 func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	r.log.V(7).Info("Reconcile", "request", req)
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, req.NamespacedName, deployment)
 	if err != nil {
@@ -31,6 +32,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			r.log.Info("deployment resource not found. Ignoring since object must be deleted")
 			return reconcile.Result{}, nil
 		}
+		r.log.Error(err, fmt.Sprintf("failed to get deployment %s", req.Name))
 		return reconcile.Result{}, err
 	}
 
@@ -40,8 +42,10 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		if errors.Is(err, ErrorScaleAnnotationParseSteps) ||
 			errors.Is(err, ErrorScaleAnnotationParseCurrentStepIndex) ||
 			errors.Is(err, ErrorScaleAnnotationParseCurrentStepState) {
+			r.log.V(7).Info("failed to parse scale annotation", "error", err)
 			return reconcile.Result{}, nil
 		} else {
+			r.log.V(7).Error(err, "failed to parse scale annotation")
 			return reconcile.Result{}, err
 		}
 	}
@@ -52,7 +56,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			deployment.Status.Replicas, *deployment.Spec.Replicas)
 	}
 
-	r.log.Info(fmt.Sprintf("deployment %s ", deployment.Name),
+	r.log.V(1).Info(fmt.Sprintf("deployment %s ", deployment.Name),
 		"spec.replicas", deployment.Spec.Replicas,
 		"status.replicas", deployment.Status.Replicas,
 		"status.available-replicas", deployment.Status.AvailableReplicas,
@@ -154,7 +158,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 				r.log.Error(err, fmt.Sprintf("deployment %s failed set scale annotation", deployment.Name))
 				return reconcile.Result{}, err
 			}
-	
+
 			err = r.patchDeployment(ctx, deployment)
 			if err != nil {
 				r.log.V(1).Error(err, "patchAnnotations failed")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,9 +11,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	klog "k8s.io/klog/v2"
 )
 
 func main() {
+	klog.InitFlags(nil)
+	flag.Parse()
 	mode := os.Args[1]
 
 	kubeconfigPath := "/root/.kube/config"
@@ -21,7 +25,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	m, err := annotationscale.NewAnnotationScaleManager("cluster1", &metav1.LabelSelector{}, kubeconfig)
+	m, err := annotationscale.NewAnnotationScaleManager(klog.NewKlogr(), "cluster1", &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "nginx",
+		},
+	}, kubeconfig)
 	if err != nil {
 		log.Fatal(err)
 	}

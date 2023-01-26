@@ -6,7 +6,7 @@ kubectl apply -f nginx-deployment.yaml
 
 scale up
 ```shell
-go run main.go scaleup
+go run main.go scaleup 
 ```
 
 releasing
