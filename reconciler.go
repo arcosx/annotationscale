@@ -50,31 +50,40 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	}
 
 	r.log.V(4).Info(fmt.Sprintf("deployment %s ", deployment.Name),
+		"spec.paused", deployment.Spec.Paused,
 		"spec.replicas", *deployment.Spec.Replicas,
 		"status.replicas", deployment.Status.Replicas,
 		"status.available-replicas", deployment.Status.AvailableReplicas,
 		"status.unavailable-replicas", deployment.Status.UnavailableReplicas,
 		"status.ready-replicas", deployment.Status.ReadyReplicas,
 		"status.updated-replicas", deployment.Status.UpdatedReplicas,
-		"current_step_index", scaleAnnotation.CurrentStepIndex,
-		"current_step_state", scaleAnnotation.CurrentStepState,
-		"step", scaleAnnotation.Steps[scaleAnnotation.CurrentStepIndex-1],
-		"max_wait_available_second", scaleAnnotation.MaxWaitAvailableSecond,
-		"max_unavailable_replicas", scaleAnnotation.MaxUnavailableReplicas,
-		"last_update_time", scaleAnnotation.LastUpdateTime,
 	)
+
+	r.log.V(4).Info(scaleAnnotation.String())
 
 	switch scaleAnnotation.CurrentStepState {
 	case StepStateUpgrade:
 		if *deployment.Spec.Replicas != scaleAnnotation.Steps[scaleAnnotation.CurrentStepIndex-1].Replicas {
 			r.fixDeploymentReplicas(ctx, deployment, scaleAnnotation)
-			return reconcile.Result{}, nil
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Spec.Paused in StepUpgrade Status must be false
+		if deployment.Spec.Paused {
+			deployment.Spec.Paused = false
+			r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused false", deployment.Name))
+			err = r.patchDeployment(ctx, deployment)
+			if err != nil {
+				r.log.Error(err, fmt.Sprintf("deployment %s failed to patch", deployment.Name))
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		if deployment.Status.Replicas != *deployment.Spec.Replicas {
 			r.log.V(5).Info(fmt.Sprintf("deployment %s waiting for rollout to finish: %d out of %d new replicas have been updated",
 				deployment.Name, deployment.Status.Replicas, *deployment.Spec.Replicas))
-			return reconcile.Result{}, fmt.Errorf("waiting for rollout to finish: %d out of %d new replicas have been updated",
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, fmt.Errorf("waiting for rollout to finish: %d out of %d new replicas have been updated",
 				deployment.Status.Replicas, *deployment.Spec.Replicas)
 		}
 
@@ -94,6 +103,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			stepDeadline := scaleAnnotation.StepDeadline()
 			if now.Before(stepDeadline) {
 				r.log.V(4).Info(fmt.Sprintf("deployment %s upgrading now....status.Replicas(%d) status.AvailableReplicas(%d) ", deployment.Name, deployment.Status.Replicas, deployment.Status.AvailableReplicas))
+				return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 			} else {
 				r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
 				if deployment.Status.UnavailableReplicas > int32(scaleAnnotation.MaxUnavailableReplicas) {
@@ -118,22 +128,31 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	case StepStatePaused:
 		if *deployment.Spec.Replicas != scaleAnnotation.Steps[scaleAnnotation.CurrentStepIndex-1].Replicas {
 			r.fixDeploymentReplicas(ctx, deployment, scaleAnnotation)
-			return reconcile.Result{}, nil
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		if deployment.Status.Replicas != *deployment.Spec.Replicas {
 			r.log.V(4).Info(fmt.Sprintf("deployment %s waiting for rollout to finish: %d out of %d new replicas have been updated",
 				deployment.Name, deployment.Status.Replicas, *deployment.Spec.Replicas))
-			return reconcile.Result{}, fmt.Errorf("waiting for rollout to finish: %d out of %d new replicas have been updated",
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, fmt.Errorf("waiting for rollout to finish: %d out of %d new replicas have been updated",
 				deployment.Status.Replicas, *deployment.Spec.Replicas)
 		}
 
 		if deployment.Status.Replicas == deployment.Status.AvailableReplicas {
+			if deployment.Spec.Paused {
+				r.log.V(4).Info(fmt.Sprintf("deployment %s is paused, do not need set", deployment.Name))
+				return reconcile.Result{}, nil
+			}
 			deployment.Spec.Paused = true
 			scaleAnnotation.LastUpdateTime = time.Now()
 			r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused true", deployment.Name))
 		} else {
 			r.log.V(4).Info(fmt.Sprintf("deployment %s upgrading to pause point....", deployment.Name))
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, fmt.Errorf("deployment %s wait status.AvailableReplicas %d to status.Replicas %d",
+				deployment.Name,
+				deployment.Status.AvailableReplicas,
+				deployment.Status.Replicas,
+			)
 		}
 
 		err = SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
@@ -142,7 +161,6 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			return reconcile.Result{}, err
 		}
 
-		r.log.V(4).Info(fmt.Sprintf("deployment %s patch deployment", deployment.Name), "deployment", deployment)
 		err = r.patchDeployment(ctx, deployment)
 
 		if err != nil {
@@ -153,20 +171,31 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	case StepStateReady:
 		if *deployment.Spec.Replicas != scaleAnnotation.Steps[scaleAnnotation.CurrentStepIndex-1].Replicas {
 			r.fixDeploymentReplicas(ctx, deployment, scaleAnnotation)
-			return reconcile.Result{}, nil
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Spec.Paused in StepReady Status must be false
+		if deployment.Spec.Paused {
+			r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused false", deployment.Name))
+			deployment.Spec.Paused = false
+			err = r.patchDeployment(ctx, deployment)
+			if err != nil {
+				r.log.Error(err, fmt.Sprintf("deployment %s failed to patch", deployment.Name))
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		// handle out of index
 		if scaleAnnotation.CurrentStepIndex == len(scaleAnnotation.Steps) {
 			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s when currentStepIndex %d equal len(scaleAnnotation.Steps)", deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted, scaleAnnotation.CurrentStepIndex))
 			scaleAnnotation.CurrentStepState = StepStateCompleted
-
+			scaleAnnotation.LastUpdateTime = time.Now()
 			err = SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
 			if err != nil {
 				r.log.Error(err, fmt.Sprintf("deployment %s failed set scale annotation", deployment.Name))
 				return reconcile.Result{}, err
 			}
-
 			err = r.patchDeployment(ctx, deployment)
 			if err != nil {
 				r.log.Error(err, fmt.Sprintf("deployment %s failed to patch", deployment.Name))
@@ -212,10 +241,11 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	case StepStateCompleted:
 		if *deployment.Spec.Replicas != scaleAnnotation.Steps[scaleAnnotation.CurrentStepIndex-1].Replicas {
 			r.fixDeploymentReplicas(ctx, deployment, scaleAnnotation)
-			return reconcile.Result{}, nil
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		r.log.V(4).Info(fmt.Sprintf("deployment %s scale success", deployment.Name))
+		return reconcile.Result{}, nil
 
 	case StepStateError:
 		r.log.V(2).Info(fmt.Sprintf("deployment %s scale error", deployment.Name))
@@ -226,7 +256,9 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			r.log.Error(err, fmt.Sprintf("deployment %s failed to patch", deployment.Name))
 			return reconcile.Result{}, err
 		}
+		return reconcile.Result{}, nil
 	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -236,6 +268,7 @@ func (r *DeploymentReconciler) InjectClient(c client.Client) error {
 }
 
 func (r *DeploymentReconciler) patchDeployment(ctx context.Context, deployment *appsv1.Deployment) error {
+	r.log.V(5).Info(fmt.Sprintf("deployment %s patch deployment", deployment.Name), "deployment", deployment)
 	latest := &appsv1.Deployment{}
 	err := r.Get(ctx, client.ObjectKeyFromObject(deployment), latest)
 	if err != nil {
@@ -264,13 +297,11 @@ func (r *DeploymentReconciler) fixDeploymentReplicas(ctx context.Context, deploy
 	}
 
 	scaleAnnotation.LastUpdateTime = time.Now()
-	fixedAnnotation, err := SetScaleAnnotation(deployment.Annotations, scaleAnnotation)
+	err := SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
 	if err != nil {
 		r.log.Error(err, fmt.Sprintf("deployment %s failed set scale annotation", deployment.Name))
 		return err
 	}
-	r.log.V(5).Info(fmt.Sprintf("deployment %s fixed annotation: %s", deployment.Name, fixedAnnotation))
-	deployment.SetAnnotations(fixedAnnotation)
 	err = r.patchDeployment(ctx, deployment)
 	if err != nil {
 		r.log.V(1).Error(err, fmt.Sprintf("deployment %s patch failed", deployment.Name))
