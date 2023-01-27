@@ -49,8 +49,8 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 	}
 
-	r.log.V(2).Info(fmt.Sprintf("deployment %s ", deployment.Name),
-		"spec.replicas", deployment.Spec.Replicas,
+	r.log.V(4).Info(fmt.Sprintf("deployment %s ", deployment.Name),
+		"spec.replicas", *deployment.Spec.Replicas,
 		"status.replicas", deployment.Status.Replicas,
 		"status.available-replicas", deployment.Status.AvailableReplicas,
 		"status.unavailable-replicas", deployment.Status.UnavailableReplicas,
