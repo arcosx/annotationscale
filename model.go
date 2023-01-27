@@ -29,6 +29,11 @@ type ScaleAnnotation struct {
 	LastUpdateTime         time.Time `json:"last_update_time,omitempty"`
 }
 
+func (sa *ScaleAnnotation) String() string {
+	return fmt.Sprintf("steps: %v, current_step_index: %d, current_step_state: %s, message: %s, max_wait_available_second: %d, max_unavailable_replicas: %d, last_update_time: %s",
+		sa.Steps, sa.CurrentStepIndex, sa.CurrentStepState, sa.Message, sa.MaxWaitAvailableSecond, sa.MaxUnavailableReplicas, sa.LastUpdateTime)
+}
+
 func (sa *ScaleAnnotation) StepDeadline() time.Time {
 	deadline := sa.LastUpdateTime.Add(time.Duration(sa.MaxWaitAvailableSecond) * time.Second)
 	return deadline
@@ -134,9 +139,10 @@ func ReadScaleAnnotation(annotations map[string]string) (*ScaleAnnotation, error
 type StepState string
 
 const (
-	StepStateUpgrade   StepState = "StepUpgrade"
-	StepStatePaused    StepState = "StepPaused"
-	StepStateReady     StepState = "StepReady"
+	StepStateUpgrade StepState = "StepUpgrade"
+	StepStatePaused  StepState = "StepPaused"
+	StepStateReady   StepState = "StepReady"
+
 	StepStateCompleted StepState = "Completed"
 	StepStateError     StepState = "Error"
 )

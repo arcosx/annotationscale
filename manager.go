@@ -16,18 +16,15 @@ import (
 )
 
 type AnnotationScaleManager struct {
-	log     logr.Logger
+	log     *logr.Logger
 	manager manager.Manager
 	config  *rest.Config
-	match   *metav1.LabelSelector
-
 	stopCh  chan struct{}
 	mutex   sync.Mutex
 	stopped bool
 }
 
-func NewAnnotationScaleManager(logger logr.Logger, managerName string, match *metav1.LabelSelector, config *rest.Config) (*AnnotationScaleManager, error) {
-	log := logger.WithName(managerName)
+func NewAnnotationScaleManager(log *logr.Logger, match *metav1.LabelSelector, config *rest.Config) (*AnnotationScaleManager, error) {
 
 	labelMap, err := metav1.LabelSelectorAsMap(match)
 	if err != nil {
@@ -76,7 +73,6 @@ func NewAnnotationScaleManager(logger logr.Logger, managerName string, match *me
 		log:     log,
 		stopCh:  make(chan struct{}),
 		stopped: false,
-		match:   match,
 	}, nil
 }
 
