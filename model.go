@@ -145,6 +145,8 @@ const (
 
 	StepStateCompleted StepState = "Completed"
 	StepStateError     StepState = "Error"
+
+	StepStateTimeout     StepState = "Timeout"
 )
 
 type Step struct {

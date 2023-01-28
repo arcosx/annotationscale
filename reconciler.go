@@ -107,7 +107,22 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			} else {
 				r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
 				if deployment.Status.UnavailableReplicas > int32(scaleAnnotation.MaxUnavailableReplicas) {
-					scaleAnnotation.CurrentStepState = StepStateError
+					scaleAnnotation.CurrentStepState = StepStateTimeout
+				} else {
+					// when timeout, but the unavailable replicas is less than maxUnavailableReplicas, we think it is completed
+					r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name),
+						fmt.Sprintf("but the unavailable replicas %d is less than maxUnavailableReplicas %d ",
+							deployment.Status.UnavailableReplicas,
+							scaleAnnotation.MaxUnavailableReplicas))
+
+					if scaleAnnotation.CurrentStepIndex == len(scaleAnnotation.Steps) {
+						r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted))
+						scaleAnnotation.CurrentStepState = StepStateCompleted
+					} else {
+						r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateReady))
+						scaleAnnotation.CurrentStepState = StepStateReady
+					}
+					scaleAnnotation.LastUpdateTime = time.Now()
 				}
 			}
 		}
@@ -247,11 +262,10 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		r.log.V(4).Info(fmt.Sprintf("deployment %s scale success", deployment.Name))
 		return reconcile.Result{}, nil
 
-	case StepStateError:
-		r.log.V(2).Info(fmt.Sprintf("deployment %s scale error", deployment.Name))
+	case StepStateTimeout:
+		r.log.V(4).Info(fmt.Sprintf("deployment %s scale timeout", deployment.Name))
 		deployment.Spec.Paused = true
 		err = r.patchDeployment(ctx, deployment)
-
 		if err != nil {
 			r.log.Error(err, fmt.Sprintf("deployment %s failed to patch", deployment.Name))
 			return reconcile.Result{}, err
