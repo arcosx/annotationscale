@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
-	"os"
 
 	annotationscale "github.com/arcosx/annotationscale"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,27 +12,45 @@ import (
 	klog "k8s.io/klog/v2"
 )
 
+var mode string
+var deploymentName string
+var kubeconfig string
+var server bool
+
+func init() {
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "kubeconfig path")
+	flag.StringVar(&mode, "mode", "scaleup", "scaleup|scaledown|release|stop")
+	flag.StringVar(&deploymentName, "deployment-name", "nginx-deployment", "deployment name")
+	flag.BoolVar(&server, "server", false, "server mode")
+}
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
-	mode := os.Args[1]
 
-	kubeconfigPath := "/root/.kube/config"
-	kubeconfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	kubeconfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	m, err := annotationscale.NewAnnotationScaleManager(klog.NewKlogr(), "cluster1", &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "nginx",
-		},
-	}, kubeconfig)
-	if err != nil {
-		log.Fatal(err)
-	}
+	klogr := klog.NewKlogr().WithName("annotationscale-example")
 
-	go func() {
+	if server {
+		klog.Info("server mode")
+		m, err := annotationscale.NewAnnotationScaleManager(&klogr, &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"app.kubernetes.io/managed-by": "annotaionscale",
+			},
+		}, kubeconfig)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = m.Start()
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
 		clientset, err := kubernetes.NewForConfig(kubeconfig)
 		if err != nil {
 			log.Fatal(err)
@@ -44,27 +60,26 @@ func main() {
 		}
 		switch mode {
 		case "scaleup":
-			fmt.Println("scaleup now")
+			klog.Info("scaleup now...")
 			scaleUp(context.TODO(), clientset)
 		case "scaledown":
-			fmt.Println("scaledown now")
+			klog.Info("scaledown now...")
 			scaleDown(context.TODO(), clientset)
-		case "releasing":
-			fmt.Println("releasing now")
-			releasing(context.TODO(), clientset)
+		case "release":
+			klog.Info("release now...")
+			release(context.TODO(), clientset)
+		case "stop":
+			klog.Info("stop now...")
+			stop(context.TODO(), clientset)
 		default:
 			return
 		}
-	}()
-	err = m.Start()
-	if err != nil {
-		log.Fatal(err)
 	}
 }
 
 func scaleUp(ctx context.Context, clientset *kubernetes.Clientset) {
 
-	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, "nginx-deployment", metav1.GetOptions{})
+	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, deploymentName, metav1.GetOptions{})
 
 	if err != nil {
 		log.Fatal(err)
@@ -75,27 +90,28 @@ func scaleUp(ctx context.Context, clientset *kubernetes.Clientset) {
 	scaleAnnotation.Steps = []annotationscale.Step{
 		{
 			Replicas: 1,
-			Pause:    false,
 		},
 		{
 			Replicas: 2,
-			Pause:    false,
 		},
 		{
 			Replicas: 5,
-			Pause:    false,
 		},
 		{
 			Replicas: 8,
-			Pause:    false,
+			Pause: true,
 		},
 		{
 			Replicas: 10,
-			Pause:    true,
 		},
 		{
 			Replicas: 12,
-			Pause:    false,
+		},
+		{
+			Replicas: 15,
+		},
+		{
+			Replicas: 20,
 		},
 	}
 	scaleAnnotation.CurrentStepState = annotationscale.StepStateReady
@@ -115,7 +131,7 @@ func scaleUp(ctx context.Context, clientset *kubernetes.Clientset) {
 }
 
 func scaleDown(ctx context.Context, clientset *kubernetes.Clientset) {
-	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, "nginx-deployment", metav1.GetOptions{})
+	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, deploymentName, metav1.GetOptions{})
 
 	if err != nil {
 		log.Fatal(err)
@@ -131,15 +147,21 @@ func scaleDown(ctx context.Context, clientset *kubernetes.Clientset) {
 	scaleAnnotation.Steps = []annotationscale.Step{
 		{
 			Replicas: 12,
-			Pause:    false,
+		},
+		{
+			Replicas: 15,
+		},
+		{
+			Replicas: 10,
 		},
 		{
 			Replicas: 5,
-			Pause:    false,
 		},
 		{
 			Replicas: 1,
-			Pause:    false,
+		},
+		{
+			Replicas: 0,
 		},
 	}
 
@@ -156,8 +178,8 @@ func scaleDown(ctx context.Context, clientset *kubernetes.Clientset) {
 	}
 }
 
-func releasing(ctx context.Context, clientset *kubernetes.Clientset) {
-	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, "nginx-deployment", metav1.GetOptions{})
+func release(ctx context.Context, clientset *kubernetes.Clientset) {
+	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, deploymentName, metav1.GetOptions{})
 
 	if err != nil {
 		log.Fatal(err)
@@ -170,6 +192,42 @@ func releasing(ctx context.Context, clientset *kubernetes.Clientset) {
 	}
 
 	scaleAnnotation.CurrentStepState = annotationscale.StepStateReady
+
+	err = annotationscale.SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = clientset.AppsV1().Deployments("default").Update(ctx, deployment, metav1.UpdateOptions{})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func stop(ctx context.Context, clientset *kubernetes.Clientset) {
+	deployment, err := clientset.AppsV1().Deployments("default").Get(ctx, deploymentName, metav1.GetOptions{})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	scaleAnnotation, err := annotationscale.ReadScaleAnnotation(deployment.Annotations)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var pauseIndex int
+	for index := scaleAnnotation.CurrentStepIndex; index <= len(scaleAnnotation.Steps); index++ {
+		if scaleAnnotation.Steps[index-1].Replicas >= deployment.Status.AvailableReplicas {
+			pauseIndex = index
+			break
+		}
+	}
+
+	scaleAnnotation.CurrentStepState = annotationscale.StepStatePaused
+	scaleAnnotation.CurrentStepIndex = pauseIndex
+	scaleAnnotation.Steps[pauseIndex-1].Pause = true
 
 	err = annotationscale.SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
 	if err != nil {
