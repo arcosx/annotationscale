@@ -144,8 +144,7 @@ const (
 	StepStateReady   StepState = "StepReady"
 
 	StepStateCompleted StepState = "Completed"
-	StepStateError     StepState = "Error"
-
+	
 	StepStateTimeout     StepState = "Timeout"
 )
 
