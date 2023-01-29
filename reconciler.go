@@ -90,13 +90,17 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		if deployment.Status.Replicas == deployment.Status.AvailableReplicas {
 			if scaleAnnotation.CurrentStepIndex == len(scaleAnnotation.Steps) {
 				// if deployment.Status.Replicas == scaleAnnotation.Steps[len(scaleAnnotation.Steps)-1].Replicas {
-				r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted))
+				newLastUpdateTime := time.Now()
+				r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+					deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 				scaleAnnotation.CurrentStepState = StepStateCompleted
-				scaleAnnotation.LastUpdateTime = time.Now()
+				scaleAnnotation.LastUpdateTime = newLastUpdateTime
 			} else {
-				r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateReady))
+				newLastUpdateTime := time.Now()
+				r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+					deployment.Name, scaleAnnotation.CurrentStepState, StepStateReady, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 				scaleAnnotation.CurrentStepState = StepStateReady
-				scaleAnnotation.LastUpdateTime = time.Now()
+				scaleAnnotation.LastUpdateTime = newLastUpdateTime
 			}
 
 		} else {
@@ -106,30 +110,36 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 				r.log.V(4).Info(fmt.Sprintf("deployment %s upgrading now....status.Replicas(%d) status.AvailableReplicas(%d) ", deployment.Name, deployment.Status.Replicas, deployment.Status.AvailableReplicas))
 				return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 			} else {
-				r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
+				r.log.V(4).Info(fmt.Sprintf("deployment %s touch step deadline!", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
 				if deployment.Status.UnavailableReplicas > int32(scaleAnnotation.MaxUnavailableReplicas) {
-					r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name),
+					r.log.V(4).Info(fmt.Sprintf("deployment %s touch step deadline!", deployment.Name),
 						fmt.Sprintf("the unavailable replicas %d is [more than] maxUnavailableReplicas %d ",
 							deployment.Status.UnavailableReplicas,
 							scaleAnnotation.MaxUnavailableReplicas))
-					r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateTimeout))
+					newLastUpdateTime := time.Now()
+					r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+						deployment.Name, scaleAnnotation.CurrentStepState, StepStateTimeout, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 					scaleAnnotation.CurrentStepState = StepStateTimeout
-					scaleAnnotation.LastUpdateTime = time.Now()
+					scaleAnnotation.LastUpdateTime = newLastUpdateTime
 				} else {
 					// when timeout, but the unavailable replicas is less than maxUnavailableReplicas, we think it is completed
-					r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name),
+					r.log.V(4).Info(fmt.Sprintf("deployment %s touch step deadline!", deployment.Name),
 						fmt.Sprintf("the unavailable replicas %d is [less than] maxUnavailableReplicas %d ",
 							deployment.Status.UnavailableReplicas,
 							scaleAnnotation.MaxUnavailableReplicas))
 
 					if scaleAnnotation.CurrentStepIndex == len(scaleAnnotation.Steps) {
-						r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted))
+						newLastUpdateTime := time.Now()
+						r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+							deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 						scaleAnnotation.CurrentStepState = StepStateCompleted
-						scaleAnnotation.LastUpdateTime = time.Now()
+						scaleAnnotation.LastUpdateTime = newLastUpdateTime
 					} else {
-						r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateReady))
+						newLastUpdateTime := time.Now()
+						r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+							deployment.Name, scaleAnnotation.CurrentStepState, StepStateReady, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 						scaleAnnotation.CurrentStepState = StepStateReady
-						scaleAnnotation.LastUpdateTime = time.Now()
+						scaleAnnotation.LastUpdateTime = newLastUpdateTime
 					}
 				}
 
@@ -167,7 +177,9 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 				r.log.V(4).Info(fmt.Sprintf("deployment %s is paused, do not need set", deployment.Name))
 				return reconcile.Result{}, nil
 			}
-			r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused true", deployment.Name))
+			newLastUpdateTime := time.Now()
+			r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused true,,change last update time: %s --> %s",
+				deployment.Name, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 			deployment.Spec.Paused = true
 			scaleAnnotation.LastUpdateTime = time.Now()
 		} else {
@@ -179,19 +191,32 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 					deployment.Status.AvailableReplicas))
 				return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 			} else {
-				r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
+				r.log.V(4).Info(fmt.Sprintf("deployment %s touch step deadline!", deployment.Name), "from", stepDeadline.String(), "duration seconds", now.Sub(stepDeadline).Seconds())
 				if deployment.Status.UnavailableReplicas > int32(scaleAnnotation.MaxUnavailableReplicas) {
-					r.log.V(4).Info(fmt.Sprintf("deployment %s deadline", deployment.Name),
-						fmt.Sprintf("the unavailable replicas %d is more than maxUnavailableReplicas %d ",
+					r.log.V(4).Info(fmt.Sprintf("deployment %s touch step deadline!", deployment.Name),
+						fmt.Sprintf("the unavailable replicas %d is [more than] maxUnavailableReplicas %d ",
 							deployment.Status.UnavailableReplicas,
 							scaleAnnotation.MaxUnavailableReplicas))
-					r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateTimeout))
+					newLastUpdateTime := time.Now()
+					r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+						deployment.Name, scaleAnnotation.CurrentStepState, StepStateTimeout, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 					scaleAnnotation.CurrentStepState = StepStateTimeout
-					scaleAnnotation.LastUpdateTime = time.Now()
+					scaleAnnotation.LastUpdateTime = newLastUpdateTime
 				} else {
-					r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused true", deployment.Name))
+					// when timeout, but the unavailable replicas is less than maxUnavailableReplicas, we think it is completed
+					r.log.V(4).Info(fmt.Sprintf("deployment %s touch step deadline!", deployment.Name),
+						fmt.Sprintf("the unavailable replicas %d is [less than] maxUnavailableReplicas %d ",
+							deployment.Status.UnavailableReplicas,
+							scaleAnnotation.MaxUnavailableReplicas))
+					if deployment.Spec.Paused {
+						r.log.V(4).Info(fmt.Sprintf("deployment %s is paused, do not need set", deployment.Name))
+						return reconcile.Result{}, nil
+					}
+					newLastUpdateTime := time.Now()
+					r.log.V(4).Info(fmt.Sprintf("deployment %s is paused and set spec.paused true,,change last update time: %s --> %s",
+						deployment.Name, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 					deployment.Spec.Paused = true
-					scaleAnnotation.LastUpdateTime = time.Now()
+					scaleAnnotation.LastUpdateTime = newLastUpdateTime
 				}
 			}
 		}
@@ -229,9 +254,11 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 		// handle out of index
 		if scaleAnnotation.CurrentStepIndex == len(scaleAnnotation.Steps) {
-			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s when currentStepIndex %d equal len(scaleAnnotation.Steps)", deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted, scaleAnnotation.CurrentStepIndex))
+			newLastUpdateTime := time.Now()
+			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+				deployment.Name, scaleAnnotation.CurrentStepState, StepStateCompleted, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 			scaleAnnotation.CurrentStepState = StepStateCompleted
-			scaleAnnotation.LastUpdateTime = time.Now()
+			scaleAnnotation.LastUpdateTime = newLastUpdateTime
 			err = SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
 			if err != nil {
 				r.log.Error(err, fmt.Sprintf("deployment %s failed set scale annotation", deployment.Name))
@@ -257,14 +284,17 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		deployment.Spec.Replicas = &nextStep.Replicas
 		scaleAnnotation.CurrentStepIndex = nextStepIndex
 
+		newLastUpdateTime := time.Now()
 		if nextStep.Pause {
-			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStatePaused))
+			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+				deployment.Name, scaleAnnotation.CurrentStepState, StepStatePaused, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 			scaleAnnotation.CurrentStepState = StepStatePaused
 		} else {
-			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s", deployment.Name, scaleAnnotation.CurrentStepState, StepStateUpgrade))
+			r.log.V(4).Info(fmt.Sprintf("deployment %s change step state: %s --> %s,change last update time: %s --> %s",
+				deployment.Name, scaleAnnotation.CurrentStepState, StepStateUpgrade, scaleAnnotation.LastUpdateTime, newLastUpdateTime))
 			scaleAnnotation.CurrentStepState = StepStateUpgrade
 		}
-		scaleAnnotation.LastUpdateTime = time.Now()
+		scaleAnnotation.LastUpdateTime = newLastUpdateTime
 
 		err = SetDeploymentScaleAnnotation(deployment, scaleAnnotation)
 		if err != nil {

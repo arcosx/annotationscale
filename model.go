@@ -20,18 +20,20 @@ var (
 )
 
 type ScaleAnnotation struct {
-	Steps                  []Step    `json:"steps,omitempty"`
-	CurrentStepIndex       int       `json:"current_step_index,omitempty"`
-	CurrentStepState       StepState `json:"current_step_state,omitempty"`
-	Message                string    `json:"message,omitempty"`
+	Steps            []Step    `json:"steps,omitempty"`
+	CurrentStepIndex int       `json:"current_step_index,omitempty"`
+	CurrentStepState StepState `json:"current_step_state,omitempty"`
+	Message          string    `json:"message,omitempty"`
+	// Step max wait available time
+	// default 600s
 	MaxWaitAvailableSecond int       `json:"max_wait_available_second,omitempty"`
 	MaxUnavailableReplicas int       `json:"max_unavailable_replicas,omitempty"`
 	LastUpdateTime         time.Time `json:"last_update_time,omitempty"`
 }
 
 func (sa *ScaleAnnotation) String() string {
-	return fmt.Sprintf("steps: %v, current_step_index: %d, current_step_state: %s, message: %s, max_wait_available_second: %d, max_unavailable_replicas: %d, last_update_time: %s",
-		sa.Steps, sa.CurrentStepIndex, sa.CurrentStepState, sa.Message, sa.MaxWaitAvailableSecond, sa.MaxUnavailableReplicas, sa.LastUpdateTime)
+	return fmt.Sprintf("steps: %v, current_step_index: %d, current_step_state: %s, message: %s, max_wait_available_second: %d, max_unavailable_replicas: %d, last_update_time: %s, step_deadline: %s",
+		sa.Steps, sa.CurrentStepIndex, sa.CurrentStepState, sa.Message, sa.MaxWaitAvailableSecond, sa.MaxUnavailableReplicas, sa.LastUpdateTime, sa.StepDeadline())
 }
 
 func (sa *ScaleAnnotation) StepDeadline() time.Time {
@@ -144,8 +146,8 @@ const (
 	StepStateReady   StepState = "StepReady"
 
 	StepStateCompleted StepState = "Completed"
-	
-	StepStateTimeout     StepState = "Timeout"
+
+	StepStateTimeout StepState = "Timeout"
 )
 
 type Step struct {
