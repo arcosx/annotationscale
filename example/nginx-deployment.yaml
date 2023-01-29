@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/managed-by: "annotaionscale"
 spec:
   minReadySeconds: 30
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: nginx

@@ -10,7 +10,7 @@ kubectl apply -f nginx-deployment.yaml
 Next, run server
 
 ```shell
-go run main.go -v 4 --kubeconfig ~/.kube/config -deployment-name nginx-deployment -server
+go run main.go -v 4 --kubeconfig ~/.kube/config -server
 ```
 
 # Actions
