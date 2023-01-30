@@ -10,9 +10,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 )
 
-const DefaultMaxWaitAvailableSecond = 100
-const DefaultMaxUnavailableReplicas = 1
-
 var (
 	ErrorScaleAnnotationParseSteps            error = errors.New("not include steps")
 	ErrorScaleAnnotationParseCurrentStepIndex error = errors.New("not include current_step_index")
@@ -20,12 +17,10 @@ var (
 )
 
 type ScaleAnnotation struct {
-	Steps            []Step    `json:"steps,omitempty"`
-	CurrentStepIndex int       `json:"current_step_index,omitempty"`
-	CurrentStepState StepState `json:"current_step_state,omitempty"`
-	Message          string    `json:"message,omitempty"`
-	// Step max wait available time
-	// default 600s
+	Steps                  []Step    `json:"steps,omitempty"`
+	CurrentStepIndex       int       `json:"current_step_index,omitempty"`
+	CurrentStepState       StepState `json:"current_step_state,omitempty"`
+	Message                string    `json:"message,omitempty"`
 	MaxWaitAvailableSecond int       `json:"max_wait_available_second,omitempty"`
 	MaxUnavailableReplicas int       `json:"max_unavailable_replicas,omitempty"`
 	LastUpdateTime         time.Time `json:"last_update_time,omitempty"`
@@ -44,9 +39,8 @@ func (sa *ScaleAnnotation) StepDeadline() time.Time {
 func NewScaleAnnotation() ScaleAnnotation {
 	var scaleAnnotation ScaleAnnotation
 	scaleAnnotation.Message = ""
-	// 10min
 	scaleAnnotation.MaxWaitAvailableSecond = 600
-	scaleAnnotation.MaxUnavailableReplicas = 1
+	scaleAnnotation.MaxUnavailableReplicas = 0
 	scaleAnnotation.LastUpdateTime = time.Now()
 	return scaleAnnotation
 }
@@ -68,6 +62,7 @@ func SetScaleAnnotation(annotations map[string]string, scaleAnnotation *ScaleAnn
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
+
 	annotations["steps"] = string(stepsJSONBytes)
 	annotations["current_step_index"] = strconv.Itoa(int(scaleAnnotation.CurrentStepIndex))
 	annotations["current_step_state"] = string(scaleAnnotation.CurrentStepState)
@@ -141,13 +136,11 @@ func ReadScaleAnnotation(annotations map[string]string) (*ScaleAnnotation, error
 type StepState string
 
 const (
-	StepStateUpgrade StepState = "StepUpgrade"
-	StepStatePaused  StepState = "StepPaused"
-	StepStateReady   StepState = "StepReady"
-
+	StepStateUpgrade   StepState = "StepUpgrade"
+	StepStatePaused    StepState = "StepPaused"
+	StepStateReady     StepState = "StepReady"
 	StepStateCompleted StepState = "Completed"
-
-	StepStateTimeout StepState = "Timeout"
+	StepStateTimeout   StepState = "Timeout"
 )
 
 type Step struct {
