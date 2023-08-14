@@ -3,6 +3,7 @@ package annotationscale
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -24,7 +25,7 @@ type AnnotationScaleManager struct {
 	stopped bool
 }
 
-func NewAnnotationScaleManager(log *logr.Logger, match *metav1.LabelSelector, config *rest.Config) (*AnnotationScaleManager, error) {
+func NewAnnotationScaleManager(log *logr.Logger, match *metav1.LabelSelector, config *rest.Config, syncPeriod time.Duration) (*AnnotationScaleManager, error) {
 
 	labelMap, err := metav1.LabelSelectorAsMap(match)
 	if err != nil {
@@ -42,6 +43,7 @@ func NewAnnotationScaleManager(log *logr.Logger, match *metav1.LabelSelector, co
 
 	if len(labelMap) != 0 {
 		mgr, mgrCreateErr = manager.New(config, manager.Options{
+			SyncPeriod:         &syncPeriod,
 			MetricsBindAddress: "0",
 			NewCache: cache.BuilderWithOptions(cache.Options{
 				SelectorsByObject: cache.SelectorsByObject{
