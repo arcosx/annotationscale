@@ -41,7 +41,7 @@ func main() {
 			MatchLabels: map[string]string{
 				"app.kubernetes.io/managed-by": "annotaionscale",
 			},
-		}, kubeconfig)
+		}, kubeconfig, 1)
 
 		if err != nil {
 			log.Fatal(err)
@@ -99,7 +99,7 @@ func scaleUp(ctx context.Context, clientset *kubernetes.Clientset) {
 		},
 		{
 			Replicas: 8,
-			Pause: true,
+			Pause:    true,
 		},
 		{
 			Replicas: 10,
